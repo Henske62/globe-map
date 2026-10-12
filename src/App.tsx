@@ -3,6 +3,8 @@ import { FilterBar } from './components/FilterBar';
 import { applyFilters } from './lib/filter';
 import { navigate, useRoute, useSettings, useTrips } from './lib/hooks';
 import { requestPersistentStorage } from './lib/db';
+import { removeDemoData, seedDemoOnFirstRun } from './lib/demo';
+import { DialogHost } from './components/Dialog';
 import { EMPTY_FILTERS, type Filters } from './lib/types';
 import TimelineView from './views/TimelineView';
 import StatsView from './views/StatsView';
@@ -39,6 +41,7 @@ export default function App() {
 
   useEffect(() => {
     requestPersistentStorage();
+    seedDemoOnFirstRun();
   }, []);
 
   useEffect(() => {
@@ -93,10 +96,21 @@ export default function App() {
           + <span className="nav-label">Neue Reise</span>
         </a>
       </header>
+      {trips?.some((t) => t.tags.includes('Demo')) && (
+        <div className="demo-banner" role="status">
+          <span>
+            Du siehst <strong>Beispielreisen</strong> (#Demo). Leg deine eigenen an und entferne die Beispiele, wenn du sie nicht mehr brauchst.
+          </span>
+          <button className="btn btn-small" onClick={() => removeDemoData()}>
+            Beispiele entfernen
+          </button>
+        </div>
+      )}
       {showFilters && trips && trips.length > 0 && (
         <FilterBar trips={trips} filters={filters} onChange={setFilters} resultCount={filtered.length} />
       )}
       <main>{content}</main>
+      <DialogHost />
     </div>
   );
 }

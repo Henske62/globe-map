@@ -31,6 +31,8 @@ npm run preview    # Build lokal ansehen
 
 ## Hosting
 
+**Testversion:** https://claude.ai/artifact/UtYgoDx6teDRY6RDvU4oRs (als Claude-Artifact veröffentlicht, `npm run build:artifact` erzeugt `dist/artifact.html`).
+
 Der Build in `dist/` ist eine rein statische Seite (Hash-Routing, relative Pfade) und läuft auf jedem Static Hoster:
 
 - **Netlify / Vercel / Cloudflare Pages**: Repo verbinden, Build-Befehl `npm run build`, Ausgabeordner `dist`. Auch mit privaten Repos kostenlos.
@@ -47,7 +49,7 @@ Der Build in `dist/` ist eine rein statische Seite (Hash-Routing, relative Pfade
 | Ländergrenzen | [world-atlas](https://github.com/topojson/world-atlas) (Natural Earth 1:50m) |
 | Ländernamen (de) | i18n-iso-countries |
 | Datenbank | IndexedDB via [Dexie](https://dexie.org) |
-| Ortssuche | [Nominatim](https://nominatim.org) / © OpenStreetMap-Mitwirkende (max. 1 Anfrage/s) |
+| Ortssuche | [Nominatim](https://nominatim.org) / © OpenStreetMap-Mitwirkende (max. 1 Anfrage/s), dazu offline ~50.000 Städte aus [GeoNames](https://www.geonames.org) (CC BY 4.0) via all-the-cities (`npm run gazetteer`) |
 
 ```
 src/

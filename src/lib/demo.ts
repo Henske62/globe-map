@@ -126,12 +126,24 @@ export const DEMO_TRIPS = (): Trip[] => [
 
 export async function loadDemoData() {
   await db.trips.bulkAdd(DEMO_TRIPS());
-  if (!(await db.settings.get('settings'))?.home) {
-    await db.settings.put({
-      id: 'settings',
-      home: { name: 'Frankfurt am Main', lat: 50.1109, lng: 8.6821, countryCode: 'DE' },
-    });
-  }
+  const settings = await db.settings.get('settings');
+  await db.settings.put({
+    ...settings,
+    id: 'settings',
+    demoSeeded: true,
+    home: settings?.home ?? { name: 'Frankfurt am Main', lat: 50.1109, lng: 8.6821, countryCode: 'DE' },
+  });
+}
+
+let seeding: Promise<void> | undefined;
+
+/** Beim allerersten Start Beispielreisen anlegen, damit Globus und Statistik nicht leer sind. */
+export function seedDemoOnFirstRun(): Promise<void> {
+  seeding ??= (async () => {
+    const [count, settings] = await Promise.all([db.trips.count(), db.settings.get('settings')]);
+    if (count === 0 && !settings?.demoSeeded) await loadDemoData();
+  })();
+  return seeding;
 }
 
 export async function removeDemoData() {

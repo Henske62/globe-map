@@ -8,6 +8,7 @@ import { PlaceSearch } from '../components/PlaceSearch';
 import { StarRating } from '../components/StarRating';
 import { ChipInput } from '../components/ChipInput';
 import { PhotoThumb } from '../components/PhotoThumb';
+import { confirmDanger } from '../components/Dialog';
 import type { Place } from '../lib/geocode';
 import { distanceKm } from '../lib/geo';
 
@@ -255,7 +256,7 @@ export default function TripEditor({ id, allTrips, settings }: Props) {
                   <textarea rows={2} value={s.notes ?? ''} onChange={(e) => setStop(s.id, { notes: e.target.value })} />
                 </div>
               </div>
-              <details className="small">
+              <details className="small" open={s.lat === 0 && s.lng === 0}>
                 <summary className="muted">Koordinaten & Land</summary>
                 <div className="form-grid">
                   <div className="field">
@@ -282,7 +283,10 @@ export default function TripEditor({ id, allTrips, settings }: Props) {
 
         <div className="field">
           <label>{trip.stops.length ? 'Weiteren Stopp hinzufügen' : 'Ersten Stopp hinzufügen'}</label>
-          <PlaceSearch onSelect={addStop} />
+          <PlaceSearch
+            onSelect={addStop}
+            onManual={(name) => addStop({ name, label: name, lat: 0, lng: 0, countryCode: '' })}
+          />
         </div>
 
         {trip.fromHome && trip.stops.length > 0 && (
@@ -380,9 +384,9 @@ function PhotoManager({ trip, onCover }: { trip: Trip; onCover: (id?: string) =>
               <button
                 type="button"
                 className="btn btn-small btn-danger"
-                onClick={() => {
-                  if (confirm('Foto löschen?')) {
-                    db.photos.delete(p.id);
+                onClick={async () => {
+                  if (await confirmDanger('Foto löschen?', 'Das Foto wird aus dieser Reise entfernt.')) {
+                    await db.photos.delete(p.id);
                     if (trip.coverPhotoId === p.id) onCover(undefined);
                   }
                 }}

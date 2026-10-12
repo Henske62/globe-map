@@ -66,7 +66,33 @@ export async function restoreBackup(file: File, mode: 'merge' | 'replace'): Prom
   return { trips: data.trips.length, photos: photos.length };
 }
 
-export function downloadBlob(blob: Blob, filename: string) {
+interface ClaudeDownloads {
+  save(opts: { filename: string; data: Blob }): Promise<unknown>;
+}
+declare global {
+  interface Window {
+    claude?: { use(name: 'downloads'): Promise<ClaudeDownloads | null> };
+  }
+}
+
+/**
+ * Datei speichern. Läuft die App als Claude-Artifact, gehen Downloads nur über die
+ * „downloads“-Fähigkeit (der Browser fragt nach); sonst klassisch über einen Link.
+ */
+export async function downloadBlob(blob: Blob, filename: string): Promise<void> {
+  if (window.claude?.use) {
+    const downloads = await window.claude.use('downloads').catch(() => null);
+    if (downloads) {
+      try {
+        await downloads.save({ filename, data: blob });
+      } catch (e) {
+        const code = (e as { code?: string }).code;
+        if (code === 'declined') return;
+        throw new Error(code === 'rate_limited' ? 'Es läuft schon ein Download, bitte kurz warten.' : 'Download ist hier nicht möglich.');
+      }
+      return;
+    }
+  }
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;

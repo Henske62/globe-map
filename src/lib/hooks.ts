@@ -80,14 +80,25 @@ export function useElementSize<T extends HTMLElement>() {
   return [setEl, size] as const;
 }
 
+function isDark(): boolean {
+  // Ein explizites data-theme (z. B. vom Claude-Viewer gesetzt) hat Vorrang vor der System-Einstellung.
+  const theme = document.documentElement.dataset.theme;
+  if (theme === 'dark' || theme === 'light') return theme === 'dark';
+  return window.matchMedia('(prefers-color-scheme: dark)').matches;
+}
+
 export function useDarkMode(): boolean {
-  const query = '(prefers-color-scheme: dark)';
-  const [dark, setDark] = useState(() => window.matchMedia(query).matches);
+  const [dark, setDark] = useState(isDark);
   useEffect(() => {
-    const mq = window.matchMedia(query);
-    const onChange = () => setDark(mq.matches);
-    mq.addEventListener('change', onChange);
-    return () => mq.removeEventListener('change', onChange);
+    const update = () => setDark(isDark());
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    mq.addEventListener('change', update);
+    const mo = new MutationObserver(update);
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    return () => {
+      mq.removeEventListener('change', update);
+      mo.disconnect();
+    };
   }, []);
   return dark;
 }

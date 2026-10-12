@@ -1,20 +1,24 @@
 import { useEffect, useRef, useState } from 'react';
 import { searchPlaces, type Place } from '../lib/geocode';
+import { searchGazetteer } from '../lib/gazetteer';
 import { flag } from '../lib/countries';
 
 interface Props {
   onSelect: (p: Place) => void;
+  /** Wird angeboten, wenn die Suche nichts findet. */
+  onManual?: (name: string) => void;
   placeholder?: string;
   autoFocus?: boolean;
 }
 
-/** Ortssuche mit Autovervollständigung (OpenStreetMap Nominatim, gedrosselt). */
-export function PlaceSearch({ onSelect, placeholder = 'Ort suchen, z. B. „Lissabon“', autoFocus }: Props) {
+/** Ortssuche mit Autovervollständigung: OpenStreetMap Nominatim (gedrosselt) plus eingebaute Offline-Städteliste. */
+export function PlaceSearch({ onSelect, onManual, placeholder = 'Ort suchen, z. B. „Lissabon“', autoFocus }: Props) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Place[]>([]);
   const [state, setState] = useState<'idle' | 'loading' | 'error'>('idle');
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
+  const [searched, setSearched] = useState('');
   const lastRequest = useRef(0);
 
   useEffect(() => {
@@ -29,15 +33,21 @@ export function PlaceSearch({ onSelect, placeholder = 'Ort suchen, z. B. „Liss
     const timer = setTimeout(async () => {
       lastRequest.current = Date.now();
       setState('loading');
-      try {
-        const r = await searchPlaces(q, ctrl.signal);
-        setResults(r);
-        setActive(0);
-        setState('idle');
-        setOpen(true);
-      } catch (e) {
-        if ((e as Error).name !== 'AbortError') setState('error');
+      // Online (OpenStreetMap) und offline (eingebaute Städteliste) parallel; was erreichbar ist, wird angezeigt.
+      const [online, offline] = await Promise.allSettled([searchPlaces(q, ctrl.signal), searchGazetteer(q)]);
+      if (ctrl.signal.aborted) return;
+      const merged: Place[] = [];
+      for (const p of [
+        ...(online.status === 'fulfilled' ? online.value : []),
+        ...(offline.status === 'fulfilled' ? offline.value : []),
+      ]) {
+        if (!merged.some((m) => m.countryCode === p.countryCode && Math.abs(m.lat - p.lat) < 0.1 && Math.abs(m.lng - p.lng) < 0.1)) merged.push(p);
       }
+      setResults(merged.slice(0, 8));
+      setSearched(q);
+      setActive(0);
+      setOpen(true);
+      setState(online.status === 'rejected' && offline.status === 'rejected' ? 'error' : 'idle');
     }, wait);
     return () => {
       clearTimeout(timer);
@@ -81,6 +91,24 @@ export function PlaceSearch({ onSelect, placeholder = 'Ort suchen, z. B. „Liss
       />
       {state === 'loading' && <span className="place-search-status">Suche…</span>}
       {state === 'error' && <span className="place-search-status error">Suche nicht erreichbar</span>}
+      {open && state === 'idle' && results.length === 0 && searched === query.trim() && query.trim().length >= 2 && onManual && (
+        <ul className="place-results">
+          <li
+            onMouseDown={(e) => {
+              e.preventDefault();
+              onManual(query.trim());
+              setQuery('');
+              setOpen(false);
+            }}
+          >
+            <span className="flag">📍</span>
+            <span>
+              <strong>„{query.trim()}“ manuell anlegen</strong>
+              <small>Nichts gefunden – Koordinaten trägst du danach selbst ein.</small>
+            </span>
+          </li>
+        </ul>
+      )}
       {open && results.length > 0 && (
         <ul className="place-results" role="listbox">
           {results.map((p, i) => (

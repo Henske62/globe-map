@@ -64,6 +64,8 @@ export interface Photo {
 export interface Settings {
   id: 'settings';
   home?: { name: string; lat: number; lng: number; countryCode: string };
+  /** Beispielreisen wurden beim ersten Start schon einmal angelegt. */
+  demoSeeded?: boolean;
 }
 
 export interface Filters {

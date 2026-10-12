@@ -12,6 +12,7 @@ import { StarRating } from '../components/StarRating';
 import { TripCover } from '../components/TripCover';
 import { PhotoThumb } from '../components/PhotoThumb';
 import { Lightbox } from '../components/Lightbox';
+import { confirmDanger } from '../components/Dialog';
 
 export default function TripDetail({ id, settings }: { id: string; settings?: Settings }) {
   const trip = useLiveQuery(() => db.trips.get(id).then((t) => t ?? null), [id]);
@@ -38,7 +39,7 @@ export default function TripDetail({ id, settings }: { id: string; settings?: Se
   const stopName = (stopId?: string) => trip.stops.find((s) => s.id === stopId)?.name;
 
   const onDelete = async () => {
-    if (!confirm(`„${trip.title}“ wirklich löschen? Fotos und Notizen gehen dabei verloren.`)) return;
+    if (!(await confirmDanger(`„${trip.title}“ löschen?`, 'Die Reise wird mit allen Fotos und Notizen gelöscht. Das lässt sich nicht rückgängig machen.'))) return;
     await deleteTrip(trip.id);
     navigate('timeline');
   };

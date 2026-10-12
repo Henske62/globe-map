@@ -6,6 +6,7 @@ import { loadDemoData, removeDemoData } from '../lib/demo';
 import { PlaceSearch } from '../components/PlaceSearch';
 import { flag } from '../lib/countries';
 import type { Settings } from '../lib/types';
+import { choose } from '../components/Dialog';
 
 function formatBytes(n: number) {
   if (n > 1e9) return `${(n / 1e9).toFixed(1)} GB`;
@@ -62,14 +63,14 @@ export default function DataView({ settings }: { settings?: Settings }) {
         {home && (
           <p>
             🏠 <strong>{home.name}</strong> {flag(home.countryCode)}{' '}
-            <button className="btn btn-ghost btn-small" onClick={() => db.settings.put({ id: 'settings' })}>
+            <button className="btn btn-ghost btn-small" onClick={() => db.settings.put({ ...settings, id: 'settings', home: undefined })}>
               entfernen
             </button>
           </p>
         )}
         <PlaceSearch
           placeholder={home ? 'Anderen Wohnort suchen…' : 'Wohnort suchen…'}
-          onSelect={(p) => db.settings.put({ id: 'settings', home: { name: p.name, lat: p.lat, lng: p.lng, countryCode: p.countryCode } })}
+          onSelect={(p) => db.settings.put({ ...settings, id: 'settings', home: { name: p.name, lat: p.lat, lng: p.lng, countryCode: p.countryCode } })}
         />
       </section>
 
@@ -104,11 +105,17 @@ export default function DataView({ settings }: { settings?: Settings }) {
                 const file = e.target.files?.[0];
                 e.target.value = '';
                 if (!file) return;
-                const replace = confirm(
-                  'Bestehende Daten ERSETZEN?\n\nOK = alles ersetzen\nAbbrechen = zusammenführen (gleiche Reisen werden aktualisiert)',
-                );
                 run(async () => {
-                  const r = await restoreBackup(file, replace ? 'replace' : 'merge');
+                  const mode = await choose({
+                    title: 'Sicherung importieren',
+                    message: `„${file.name}“\n\nZusammenführen: Reisen aus der Datei kommen dazu, gleiche Reisen werden aktualisiert.\nErsetzen: Alles hier wird durch die Datei ersetzt.`,
+                    options: [
+                      { label: 'Ersetzen', value: 'replace' as const, variant: 'danger' },
+                      { label: 'Zusammenführen', value: 'merge' as const, variant: 'primary' },
+                    ],
+                  });
+                  if (!mode) return;
+                  const r = await restoreBackup(file, mode);
                   return `${r.trips} Reisen und ${r.photos} Fotos importiert.`;
                 });
               }}
@@ -169,8 +176,14 @@ export default function DataView({ settings }: { settings?: Settings }) {
         <button
           className="btn btn-danger"
           disabled={busy}
-          onClick={() => {
-            if (prompt('Zum Bestätigen „LÖSCHEN“ eintippen:') !== 'LÖSCHEN') return;
+          onClick={async () => {
+            const ok = await choose({
+              title: 'Alle Daten löschen?',
+              message: 'Alle Reisen, Fotos und Einstellungen in diesem Browser werden gelöscht.',
+              requireText: 'LÖSCHEN',
+              options: [{ label: 'Endgültig löschen', value: true, variant: 'danger' }],
+            });
+            if (!ok) return;
             run(async () => {
               await Promise.all([db.trips.clear(), db.photos.clear(), db.settings.clear()]);
               return 'Alle Daten gelöscht.';
