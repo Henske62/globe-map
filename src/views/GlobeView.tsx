@@ -8,6 +8,7 @@ import { tripCountries } from '../lib/filter';
 import { formatRange } from '../lib/format';
 import { navigate, useDarkMode, useElementSize } from '../lib/hooks';
 import { TRANSPORTS, type Settings, type Transport, type Trip } from '../lib/types';
+import { FOCUS_REGION } from '../lib/region';
 
 // Verkehrsmittel in 5 Gruppen (validierte kategoriale Reihenfolge, je Modus eigene Stufen).
 // Flüge sind zusätzlich gestrichelt + animiert, damit Farbe nicht das einzige Merkmal ist.
@@ -93,23 +94,12 @@ export default function GlobeView({ trips, settings, focusTripId, onFilterCountr
     if (trip && trip.stops.length) {
       const lat = trip.stops.reduce((s, x) => s + x.lat, 0) / trip.stops.length;
       const lng = trip.stops.reduce((s, x) => s + x.lng, 0) / trip.stops.length;
-      g.controls().autoRotate = false;
-      g.pointOfView({ lat, lng, altitude: 1.4 }, 1500);
-    } else if (home) {
-      g.pointOfView({ lat: home.lat - 10, lng: home.lng, altitude: 2.2 }, 0);
+      g.pointOfView({ lat, lng, altitude: 1.1 }, 1500);
+    } else {
+      g.pointOfView(FOCUS_REGION.view, 0);
     }
-  }, [focusTripId, trips, home, size.width > 0]);
-
-  useEffect(() => {
-    const g = globeRef.current;
-    if (!g || !size.width) return;
-    const controls = g.controls();
-    controls.autoRotate = !focusTripId;
-    controls.autoRotateSpeed = 0.35;
-    const stop = () => (controls.autoRotate = false);
-    controls.addEventListener('start', stop);
-    return () => controls.removeEventListener('start', stop);
-  }, [size.width > 0, focusTripId]);
+    // Bewusst nicht von trips abhängig: Filtern soll die Kamera nicht zurücksetzen.
+  }, [focusTripId, size.width > 0]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const highlightTrip = (trip: Trip) => focusTripId === trip.id;
   const legColor = (l: Leg) => {
@@ -199,6 +189,29 @@ export default function GlobeView({ trips, settings, focusTripId, onFilterCountr
           }}
         />
       )}
+
+      <div className="globe-views" role="group" aria-label="Ansicht">
+        <button
+          className="btn btn-small"
+          onClick={() => {
+            const g = globeRef.current;
+            if (!g) return;
+            g.pointOfView(FOCUS_REGION.view, 1200);
+          }}
+        >
+          {FOCUS_REGION.name}
+        </button>
+        <button
+          className="btn btn-small"
+          onClick={() => {
+            const g = globeRef.current;
+            if (!g) return;
+            g.pointOfView({ ...FOCUS_REGION.view, altitude: 2.6 }, 1200);
+          }}
+        >
+          Welt
+        </button>
+      </div>
 
       {legend.size > 0 && (
         <div className="globe-legend" aria-label="Legende">

@@ -1,5 +1,6 @@
 import type { Place } from './geocode';
 import { countryName } from './countries';
+import { inFocus } from './region';
 
 interface Entry {
   name: string;
@@ -27,6 +28,8 @@ const GERMAN_NAMES: Record<string, string> = {
   'new york': 'New York City', 'san francisco': 'San Francisco', havanna: 'Havana', 'rio de janeiro': 'Rio de Janeiro',
   'st. petersburg': 'Saint Petersburg', kiew: 'Kyiv', lemberg: 'Lviv', minsk: 'Minsk', riga: 'Riga', reval: 'Tallinn',
   wilna: 'Vilnius', pressburg: 'Bratislava', laibach: 'Ljubljana', agram: 'Zagreb', marrakesch: 'Marrakesh',
+  'tel-aviv': 'Tel Aviv', jaffa: 'Tel Aviv', akkon: 'Acre', nazareth: 'Nazareth', bethlehem: 'Bethlehem', amman: 'Amman',
+  beirut: 'Beirut', eriwan: 'Yerevan', baku: 'Baku', antalya: 'Antalya', smyrna: 'İzmir', nikosia: 'Nicosia',
   tunis: 'Tunis', algier: 'Algiers', reykjavik: 'Reykjavík', 'kapverden': 'Praia', korfu: 'Kérkyra', kreta: 'Heraklion',
 };
 
@@ -60,7 +63,7 @@ function load(): Promise<Entry[]> {
   return cache;
 }
 
-/** Offline-Ortssuche über ~50.000 Städte (Einwohner ≥ 5.000 plus Haupt- und Verwaltungsstädte). */
+/** Offline-Ortssuche: alle Orte der Quelle in Europa & Nahost, übrige Welt ab 5.000 Einwohnern (~99.000 Orte). */
 export async function searchGazetteer(query: string, limit = 6): Promise<Place[]> {
   const entries = await load();
   const raw = normalize(query);
@@ -73,7 +76,8 @@ export async function searchGazetteer(query: string, limit = 6): Promise<Place[]
     if (name === q) score = 3;
     else if (name.startsWith(q)) score = 2;
     else if (e.key.includes(q)) score = 1;
-    if (score >= 0) scored.push({ e, score });
+    // Orte in Europa & Nahost bei gleicher Treffergüte zuerst.
+    if (score >= 0) scored.push({ e, score: score * 2 + (inFocus(e.cc) ? 1 : 0) });
   }
   // Liste ist nach Einwohnern sortiert -> stabile Sortierung nach Treffergüte genügt.
   scored.sort((a, b) => b.score - a.score);

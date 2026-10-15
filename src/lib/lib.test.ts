@@ -107,3 +107,12 @@ describe('countries', () => {
     expect(continentOf('br')).toBe('Südamerika');
   });
 });
+
+describe('Fokusregion', () => {
+  it('umfasst Europa bis Israel, aber nicht Übersee', async () => {
+    const { inFocus, FOCUS_REGION } = await import('./region');
+    for (const c of ['DE', 'PT', 'IS', 'GR', 'TR', 'CY', 'IL', 'jo']) expect(inFocus(c)).toBe(true);
+    for (const c of ['US', 'JP', 'EG', 'MA']) expect(inFocus(c)).toBe(false);
+    expect(new Set(FOCUS_REGION.countries).size).toBe(FOCUS_REGION.countries.length);
+  });
+});

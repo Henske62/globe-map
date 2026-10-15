@@ -157,7 +157,7 @@ export default function DataView({ settings }: { settings?: Settings }) {
 
       <section className="card">
         <h2>Demo-Daten</h2>
-        <p className="muted">Sechs Beispielreisen zum Ausprobieren. Sie tragen den Tag #Demo und lassen sich mit einem Klick wieder entfernen.</p>
+        <p className="muted">Sieben Beispielreisen in Europa und Nahost zum Ausprobieren. Sie tragen den Tag #Demo und lassen sich mit einem Klick wieder entfernen.</p>
         <div className="row">
           <button className="btn" disabled={busy} onClick={() => run(async () => (await loadDemoData(), 'Demo-Daten geladen.'))}>
             Demo-Daten laden

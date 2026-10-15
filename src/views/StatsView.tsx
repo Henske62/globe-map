@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { computeStats } from '../lib/stats';
 import { CONTINENTS, TOTAL_COUNTRIES, countryName, flag } from '../lib/countries';
+import { FOCUS_REGION } from '../lib/region';
 import { formatMoney, formatNumber } from '../lib/format';
 import { TRANSPORTS, type Settings, type Trip } from '../lib/types';
 
@@ -26,13 +27,19 @@ export default function StatsView({ trips, settings }: { trips: Trip[]; settings
   const maxYear = Math.max(...s.byYear.map((y) => y[metric]), 1);
   const transportList = [...s.byTransport.entries()].sort((a, b) => b[1] - a[1]);
   const maxTransport = Math.max(...transportList.map((t) => t[1]), 1);
+  const focusVisited = FOCUS_REGION.countries.filter((c) => s.countries.has(c));
+  const focusList = [...FOCUS_REGION.countries].sort((a, b) => countryName(a).localeCompare(countryName(b), 'de'));
   const visitedContinents = CONTINENTS.filter((c) => c !== 'Antarktis' || s.continents.has(c));
 
   return (
     <div className="page stats">
       <section className="kpis">
-        <Kpi value={s.countries.size} label="Länder" sub={`${Math.round((s.countries.size / TOTAL_COUNTRIES) * 100)} % der Welt`} />
-        <Kpi value={s.continents.size} label="Kontinente" sub={`von ${visitedContinents.length}`} />
+        <Kpi
+          value={`${focusVisited.length}/${FOCUS_REGION.countries.length}`}
+          label={`Länder ${FOCUS_REGION.name}`}
+          sub={`${Math.round((focusVisited.length / FOCUS_REGION.countries.length) * 100)} % geschafft`}
+        />
+        <Kpi value={s.countries.size} label="Länder gesamt" sub={`${Math.round((s.countries.size / TOTAL_COUNTRIES) * 100)} % der Welt`} />
         <Kpi value={s.cities} label="Orte" />
         <Kpi value={s.trips} label="Reisen" />
         <Kpi value={s.days} label="Reisetage" sub={`≈ ${(s.days / 7).toFixed(1).replace('.', ',')} Wochen`} />
@@ -70,6 +77,30 @@ export default function StatsView({ trips, settings }: { trips: Trip[]; settings
               </div>
             ))}
           </div>
+        </section>
+
+        <section className="card chart-card wide">
+          <header className="chart-head">
+            <h3>
+              {FOCUS_REGION.name}: {focusVisited.length} von {FOCUS_REGION.countries.length} Ländern
+            </h3>
+            <span className="muted small">Hervorgehoben = schon bereist</span>
+          </header>
+          <div className="progress" role="progressbar" aria-valuemin={0} aria-valuemax={FOCUS_REGION.countries.length} aria-valuenow={focusVisited.length}>
+            <span style={{ width: `${(focusVisited.length / FOCUS_REGION.countries.length) * 100}%` }} />
+          </div>
+          <ul className="country-check">
+            {focusList.map((code) => {
+              const n = s.countries.get(code) ?? 0;
+              return (
+                <li key={code} className={n ? 'visited' : ''} title={n ? `${n}× bereist` : 'noch offen'}>
+                  <span className="flag">{flag(code)}</span>
+                  <span className="country-check-name">{countryName(code)}</span>
+                  {n > 0 && <span className="country-check-count">{n}×</span>}
+                </li>
+              );
+            })}
+          </ul>
         </section>
 
         <section className="card chart-card">

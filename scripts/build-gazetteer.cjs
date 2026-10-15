@@ -1,11 +1,17 @@
 // Erzeugt public/gazetteer.txt: kompakte Offline-Ortsliste für die Ortssuche.
-// Quelle: all-the-cities (GeoNames, CC BY 4.0). Aufruf: node scripts/build-gazetteer.cjs
+// Quelle: all-the-cities (GeoNames, CC BY 4.0). Aufruf: npm run gazetteer
+// In der Fokusregion (Europa & Nahost, siehe src/lib/region.ts) alle Orte der Quelle (auch Dörfer),
+// sonst Städte ab 5.000 Einwohnern plus Haupt- und Verwaltungsstädte.
 const fs = require('fs');
 const path = require('path');
 const cities = require('all-the-cities');
 
-const MIN_POPULATION = 5000;
-const keep = cities.filter((c) => c.population >= MIN_POPULATION || /^PPL(C|A)$/.test(c.featureCode));
+const regionSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'lib', 'region.ts'), 'utf8');
+const focus = new Set(regionSrc.match(/countries: \(([\s\S]*?)\)\.split/)[1].match(/[A-Z]{2}/g));
+
+const keep = cities.filter(
+  (c) => c.population >= (focus.has(c.country) ? 0 : 5000) || /^PPL(C|A)$/.test(c.featureCode),
+);
 keep.sort((a, b) => b.population - a.population);
 
 // Format pro Zeile: Name|Alternativname|Land|Breite|Länge|Einwohner
@@ -17,4 +23,4 @@ const lines = keep.map((c) => {
 
 const out = path.join(__dirname, '..', 'public', 'gazetteer.txt');
 fs.writeFileSync(out, lines.join('\n'));
-console.log(`${lines.length} Orte -> ${out} (${(fs.statSync(out).size / 1e6).toFixed(1)} MB)`);
+console.log(`${lines.length} Orte (Fokusregion: ${focus.size} Länder) -> ${out} (${(fs.statSync(out).size / 1e6).toFixed(1)} MB)`);

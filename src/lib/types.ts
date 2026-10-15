@@ -66,6 +66,7 @@ export interface Settings {
   home?: { name: string; lat: number; lng: number; countryCode: string };
   /** Beispielreisen wurden beim ersten Start schon einmal angelegt. */
   demoSeeded?: boolean;
+  demoVersion?: number;
 }
 
 export interface Filters {

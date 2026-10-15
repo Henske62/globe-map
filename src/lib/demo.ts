@@ -48,21 +48,20 @@ export const DEMO_TRIPS = (): Trip[] => [
     ],
   }),
   trip({
-    title: 'Japan im Herbst',
-    startDate: '2022-10-28',
-    endDate: '2022-11-14',
-    description: 'Laubfärbung, Tempel und Ramen.',
+    title: 'Griechische Inseln',
+    startDate: '2022-09-10',
+    endDate: '2022-09-24',
+    description: 'Athen und mit der Fähre durch die Kykladen.',
     rating: 5,
-    tags: ['Kultur', 'Städtetrip'],
+    tags: ['Inselhopping', 'Strand'],
     companions: ['Anna', 'Jonas'],
-    costs: 4200,
+    costs: 2600,
     currency: 'EUR',
     returnTransport: 'flight',
     stops: [
-      ['Tokio', 'JP', 35.6762, 139.6503, '2022-10-29', '2022-11-03', 'flight'],
-      ['Kyoto', 'JP', 35.0116, 135.7681, '2022-11-03', '2022-11-08', 'train', 'Fushimi Inari früh morgens'],
-      ['Hiroshima', 'JP', 34.3853, 132.4553, '2022-11-08', '2022-11-10', 'train'],
-      ['Osaka', 'JP', 34.6937, 135.5023, '2022-11-10', '2022-11-14', 'train'],
+      ['Athen', 'GR', 37.9838, 23.7275, '2022-09-10', '2022-09-13', 'flight', 'Akropolis zum Sonnenaufgang'],
+      ['Naxos', 'GR', 37.1036, 25.3766, '2022-09-13', '2022-09-19', 'ferry'],
+      ['Santorini', 'GR', 36.3932, 25.4615, '2022-09-19', '2022-09-24', 'ferry', 'Sonnenuntergang in Oia'],
     ],
   }),
   trip({
@@ -94,14 +93,32 @@ export const DEMO_TRIPS = (): Trip[] => [
     ],
   }),
   trip({
-    title: 'Konferenz in New York',
-    startDate: '2025-04-07',
-    endDate: '2025-04-11',
-    rating: 3,
-    tags: ['Arbeit'],
-    companions: ['Kollegen'],
+    title: 'Israel: Tel Aviv bis Totes Meer',
+    startDate: '2025-04-03',
+    endDate: '2025-04-13',
+    description: 'Strand, Altstädte und Floaten im Toten Meer.',
+    rating: 5,
+    tags: ['Kultur', 'Strand'],
+    companions: ['Anna'],
+    costs: 2900,
+    currency: 'EUR',
     returnTransport: 'flight',
-    stops: [['New York', 'US', 40.7128, -74.006, '2025-04-07', '2025-04-11', 'flight']],
+    stops: [
+      ['Tel Aviv', 'IL', 32.0853, 34.7818, '2025-04-03', '2025-04-06', 'flight', 'Hummus im Abu Hassan, Jaffa am Abend'],
+      ['Haifa', 'IL', 32.794, 34.9896, '2025-04-06', '2025-04-08', 'train', 'Bahai-Gärten'],
+      ['Jerusalem', 'IL', 31.7683, 35.2137, '2025-04-08', '2025-04-11', 'train'],
+      ['Ein Bokek', 'IL', 31.2003, 35.3628, '2025-04-11', '2025-04-13', 'bus', 'Totes Meer'],
+    ],
+  }),
+  trip({
+    title: 'Wochenende Amsterdam',
+    startDate: '2025-06-20',
+    endDate: '2025-06-22',
+    rating: 4,
+    tags: ['Städtetrip'],
+    companions: [],
+    returnTransport: 'train',
+    stops: [['Amsterdam', 'NL', 52.3676, 4.9041, '2025-06-20', '2025-06-22', 'train', 'Grachtenfahrt']],
   }),
   trip({
     title: 'Interrail Balkan',
@@ -124,6 +141,9 @@ export const DEMO_TRIPS = (): Trip[] => [
   }),
 ];
 
+/** Erhöhen, wenn sich die Beispielreisen ändern – alte Beispiele werden dann ersetzt. */
+const DEMO_VERSION = 2;
+
 export async function loadDemoData() {
   await db.trips.bulkAdd(DEMO_TRIPS());
   const settings = await db.settings.get('settings');
@@ -131,6 +151,7 @@ export async function loadDemoData() {
     ...settings,
     id: 'settings',
     demoSeeded: true,
+    demoVersion: DEMO_VERSION,
     home: settings?.home ?? { name: 'Frankfurt am Main', lat: 50.1109, lng: 8.6821, countryCode: 'DE' },
   });
 }
@@ -141,7 +162,12 @@ let seeding: Promise<void> | undefined;
 export function seedDemoOnFirstRun(): Promise<void> {
   seeding ??= (async () => {
     const [count, settings] = await Promise.all([db.trips.count(), db.settings.get('settings')]);
-    if (count === 0 && !settings?.demoSeeded) await loadDemoData();
+    if (count === 0 && !settings?.demoSeeded) return loadDemoData();
+    // Ältere Beispielreisen (z. B. Japan, New York) gegen die aktuellen tauschen.
+    if ((settings?.demoVersion ?? 1) < DEMO_VERSION && (await db.trips.where('tags').equals('Demo').count()) > 0) {
+      await removeDemoData();
+      await loadDemoData();
+    }
   })();
   return seeding;
 }

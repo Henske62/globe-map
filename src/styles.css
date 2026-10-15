@@ -1312,3 +1312,71 @@ main {
   color: var(--text);
   border-bottom: 1px solid var(--border);
 }
+
+/* ---------- Fokusregion ---------- */
+.globe-views {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  display: flex;
+  gap: 0.35rem;
+}
+.progress {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  overflow: hidden;
+  margin-bottom: 0.9rem;
+}
+.progress span {
+  display: block;
+  height: 100%;
+  background: var(--bar);
+  border-radius: 4px;
+}
+.country-check {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 0.35rem;
+}
+.country-check li {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  padding: 0.3rem 0.55rem;
+  border-radius: 8px;
+  border: 1px dashed var(--border);
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+.country-check li .flag {
+  font-size: 1.05rem;
+  filter: grayscale(1);
+  opacity: 0.55;
+}
+.country-check li.visited {
+  border-style: solid;
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+.country-check li.visited .flag {
+  filter: none;
+  opacity: 1;
+}
+.country-check-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.country-check-count {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.8rem;
+  color: var(--text-2);
+}
