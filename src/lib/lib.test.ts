@@ -116,3 +116,25 @@ describe('Fokusregion', () => {
     expect(new Set(FOCUS_REGION.countries).size).toBe(FOCUS_REGION.countries.length);
   });
 });
+
+describe('Offline-Ortssuche', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { parseGazetteer, searchEntries, GERMAN_ALIASES } = await import('./gazetteer');
+  const entries = parseGazetteer(readFileSync(new URL('../../public/gazetteer.txt', import.meta.url), 'utf8'));
+  const top = (q: string) => searchEntries(entries, q, 1)[0];
+
+  it('findet deutsche Städtenamen im richtigen Land', () => {
+    expect([top('Köln').name, top('Köln').cc]).toEqual(['Köln', 'DE']);
+    expect([top('Koeln').name, top('koln').cc]).toEqual(['Köln', 'DE']);
+    expect([top('München').de, top('Münch').cc]).toEqual(['München', 'DE']);
+    expect(top('Lissabon').cc).toBe('PT');
+    expect(top('Nürnberg').cc).toBe('DE');
+    expect(top('Hannover').cc).toBe('DE');
+  });
+
+  it('jeder deutsche Name zeigt auf einen vorhandenen Eintrag', () => {
+    for (const [de, name, cc] of GERMAN_ALIASES) {
+      expect(entries.some((e) => e.name === name && e.cc === cc), `${de} -> ${name} (${cc})`).toBe(true);
+    }
+  });
+});

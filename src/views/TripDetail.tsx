@@ -12,6 +12,7 @@ import { StarRating } from '../components/StarRating';
 import { TripCover } from '../components/TripCover';
 import { PhotoThumb } from '../components/PhotoThumb';
 import { Lightbox } from '../components/Lightbox';
+import { TripMap } from '../components/TripMap';
 import { confirmDanger } from '../components/Dialog';
 
 export default function TripDetail({ id, settings }: { id: string; settings?: Settings }) {
@@ -98,6 +99,13 @@ export default function TripDetail({ id, settings }: { id: string; settings?: Se
       </header>
 
       {trip.description && <p className="lead">{trip.description}</p>}
+
+      {trip.stops.length > 0 && (
+        <section className="card">
+          <h2>Karte</h2>
+          <TripMap trip={trip} home={home} />
+        </section>
+      )}
 
       <div className="detail-grid">
         <section className="card">

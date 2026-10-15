@@ -1,27 +1,21 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Globe, { type GlobeMethods } from 'react-globe.gl';
-import { MeshPhongMaterial } from 'three';
+import { MeshPhongMaterial, type LineSegments } from 'three';
+import { buildBorderLines, countryLocator, drawCountryTexture } from '../lib/globeLayers';
 import { loadCountries, type CountryFeature } from '../lib/worldGeo';
-import { tripLegs, type Leg } from '../lib/geo';
 import { countryName, flag } from '../lib/countries';
 import { tripCountries } from '../lib/filter';
 import { formatRange } from '../lib/format';
 import { navigate, useDarkMode, useElementSize } from '../lib/hooks';
-import { TRANSPORTS, type Settings, type Transport, type Trip } from '../lib/types';
 import { FOCUS_REGION } from '../lib/region';
+import type { Settings, Trip } from '../lib/types';
 
-// Verkehrsmittel in 5 Gruppen (validierte kategoriale Reihenfolge, je Modus eigene Stufen).
-// Flüge sind zusätzlich gestrichelt + animiert, damit Farbe nicht das einzige Merkmal ist.
-const TRANSPORT_COLORS: Record<'dark' | 'light', Record<Transport, string>> = {
-  dark: { flight: '#3987e5', train: '#d95926', car: '#199e70', bus: '#199e70', ferry: '#c98500', bike: '#d55181', walk: '#d55181', other: '#8b8f98' },
-  light: { flight: '#2a78d6', train: '#eb6834', car: '#1baf7a', bus: '#1baf7a', ferry: '#eda100', bike: '#e87ba4', walk: '#e87ba4', other: '#6b7280' },
-};
-
-// Besuchte Länder: sequentielle Violett-Rampe (1, 2, 3, 4+ Reisen), damit sie sich von den Routen abhebt.
+// Besuchte Länder: sequentielle Violett-Rampe (1, 2, 3, 4+ Reisen).
 const PALETTE = {
   dark: { ocean: '#0d1b2e', land: '#1f2f45', border: '#3b5372', atmosphere: '#5aa9ff', place: '#f8fafc', placeDim: '#f8fafc44', visited: ['#5b4fb0', '#7a6ee0', '#9d93ec', '#c4bdf5'] },
   light: { ocean: '#c9dcef', land: '#f4f1ea', border: '#9fb3c8', atmosphere: '#9cc7ff', place: '#1e293b', placeDim: '#1e293b44', visited: ['#b4abf2', '#8f84e6', '#6a5cd0', '#4b3fa5'] },
 };
+const HOME_COLOR = '#22c55e';
 
 interface Place {
   key: string;
@@ -46,22 +40,31 @@ interface Props {
   onFilterCountry: (code: string) => void;
 }
 
+/**
+ * Performance (Ziel: 60 fps auch auf schwächeren Geräten):
+ * - Länderflächen sind EINE Textur, Grenzen EIN Linienobjekt -> wenige Draw-Calls statt tausender.
+ * - Hover/Klick auf Länder per Koordinaten-Lookup statt Raycasting gegen hunderte Meshes.
+ * - Alle Accessoren memoisiert, keine Animationen, Pixel-Ratio gedeckelt.
+ * - Keine Routen-Bögen; die zeigt die Reise-Detailseite als Karte.
+ */
 export default function GlobeView({ trips, settings, focusTripId, onFilterCountry }: Props) {
   const globeRef = useRef<GlobeMethods | undefined>(undefined);
   const [containerRef, size] = useElementSize<HTMLDivElement>();
   const [countries, setCountries] = useState<CountryFeature[]>([]);
-  const [hoverCountry, setHoverCountry] = useState<CountryFeature | null>(null);
   const [selection, setSelection] = useState<Selection>(null);
+  const [tip, setTip] = useState<{ x: number; y: number; html: string } | null>(null);
+  const hoveringPoint = useRef(false);
   const dark = useDarkMode();
   const colors = dark ? PALETTE.dark : PALETTE.light;
-  const transportColors = dark ? TRANSPORT_COLORS.dark : TRANSPORT_COLORS.light;
   const home = settings?.home;
 
   useEffect(() => {
     loadCountries().then(setCountries);
   }, []);
 
-  const material = useMemo(() => new MeshPhongMaterial({ color: colors.ocean, shininess: 8 }), [colors.ocean]);
+  const material = useMemo(() => new MeshPhongMaterial({ shininess: 6 }), []);
+  const locate = useMemo(() => countryLocator(countries), [countries]);
+  const rendererConfig = useMemo(() => ({ antialias: true, alpha: true, powerPreference: 'high-performance' as const }), []);
 
   const visits = useMemo(() => {
     const m = new Map<string, Trip[]>();
@@ -84,9 +87,13 @@ export default function GlobeView({ trips, settings, focusTripId, onFilterCountr
     return list;
   }, [trips, home]);
 
-  const legs = useMemo(() => trips.flatMap((t) => tripLegs(t, home)), [trips, home]);
+  // Pixel-Ratio deckeln: Retina-Displays rendern sonst bis zu 9× so viele Pixel.
+  useEffect(() => {
+    globeRef.current?.renderer().setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+  }, [size.width > 0]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auf eine Reise zoomen, wenn sie über #/globe?trip=… geöffnet wurde.
+  // Startansicht bzw. auf eine Reise zoomen (#/globe?trip=…).
+  // Bewusst nicht von trips abhängig: Filtern soll die Kamera nicht zurücksetzen.
   useEffect(() => {
     const g = globeRef.current;
     if (!g) return;
@@ -98,135 +105,155 @@ export default function GlobeView({ trips, settings, focusTripId, onFilterCountr
     } else {
       g.pointOfView(FOCUS_REGION.view, 0);
     }
-    // Bewusst nicht von trips abhängig: Filtern soll die Kamera nicht zurücksetzen.
   }, [focusTripId, size.width > 0]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const highlightTrip = (trip: Trip) => focusTripId === trip.id;
-  const legColor = (l: Leg) => {
-    const c = transportColors[l.transport];
-    if (focusTripId && l.tripId !== focusTripId) return `${c}33`;
-    return c;
-  };
+  // Länderflächen-Textur bei Daten- oder Themewechsel neu zeichnen (~50 ms, nicht pro Frame).
+  useEffect(() => {
+    if (!countries.length) return;
+    const texture = drawCountryTexture(
+      countries,
+      (f) => {
+        const n = f.properties.code ? (visits.get(f.properties.code)?.length ?? 0) : 0;
+        return n ? colors.visited[Math.min(n, colors.visited.length) - 1] : colors.land;
+      },
+      colors.ocean,
+    );
+    material.map?.dispose();
+    material.map = texture;
+    material.color.set('#ffffff');
+    material.needsUpdate = true;
+  }, [countries, visits, colors, material]);
 
-  const visitColor = (code?: string) => {
+  // Grenzen als ein einziges Linienobjekt in die Szene.
+  useEffect(() => {
+    const g = globeRef.current;
+    if (!g || !countries.length) return;
+    const lines: LineSegments = buildBorderLines(countries, (lat, lng) => g.getCoords(lat, lng, 0.0015), colors.border);
+    g.scene().add(lines);
+    return () => {
+      g.scene().remove(lines);
+      lines.geometry.dispose();
+      (lines.material as { dispose(): void }).dispose();
+    };
+  }, [countries, colors.border, size.width > 0]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const countryTip = (code: string | undefined, fallback: string) => {
     const n = code ? (visits.get(code)?.length ?? 0) : 0;
-    if (!n) return colors.land;
-    return colors.visited[Math.min(n, colors.visited.length) - 1];
+    return `${code ? flag(code) : ''} <b>${esc(code ? countryName(code) : fallback)}</b><br/>${n ? `${n} Reise${n > 1 ? 'n' : ''}` : 'noch nicht besucht'}`;
   };
 
-  // Legende nach Farbe gruppiert (z. B. „Auto / Bus“ teilen sich eine Farbe).
-  const legend = new Map<string, string[]>();
-  for (const t of new Set(legs.map((l) => l.transport))) {
-    const c = transportColors[t];
-    legend.set(c, [...(legend.get(c) ?? []), TRANSPORTS[t].label]);
-  }
+  // Tooltip für Länder: Mausposition -> Koordinate -> Land (gedrosselt auf einen Frame).
+  const pending = useRef<number>(0);
+  const onPointerMove = (e: React.PointerEvent) => {
+    if (e.pointerType !== 'mouse') return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    cancelAnimationFrame(pending.current);
+    pending.current = requestAnimationFrame(() => {
+      const g = globeRef.current;
+      const c = g && !hoveringPoint.current ? g.toGlobeCoords(x, y) : null;
+      const f = c ? locate(c.lat, c.lng) : undefined;
+      setTip(f ? { x, y, html: countryTip(f.properties.code, f.properties.name) } : null);
+    });
+  };
+
+  const onGlobeClick = useCallback(
+    ({ lat, lng }: { lat: number; lng: number }) => {
+      const code = locate(lat, lng)?.properties.code;
+      setSelection(code ? { kind: 'country', code } : null);
+    },
+    [locate],
+  );
+
+  const pointColor = useCallback(
+    (p: object) => {
+      const place = p as Place;
+      if (place.isHome) return HOME_COLOR;
+      if (focusTripId && !place.trips.some((t) => t.id === focusTripId)) return colors.placeDim;
+      return colors.place;
+    },
+    [focusTripId, colors],
+  );
+  const pointRadius = useCallback((p: object) => ((p as Place).isHome ? 0.45 : 0.22 + Math.min(0.25, (p as Place).trips.length * 0.05)), []);
+  const pointLabel = useCallback((p: object) => {
+    const place = p as Place;
+    if (place.isHome) return `<div class="globe-tip">🏠 <b>${esc(place.name)}</b><br/>Zuhause</div>`;
+    return `<div class="globe-tip">${flag(place.countryCode)} <b>${esc(place.name)}</b><br/>${place.trips.map((t) => esc(t.title)).join('<br/>')}</div>`;
+  }, []);
+  const onPointHover = useCallback((p: object | null) => {
+    hoveringPoint.current = !!p;
+    if (p) setTip(null);
+  }, []);
+  const onPointClick = useCallback((p: object) => {
+    if (!(p as Place).isHome) setSelection({ kind: 'place', place: p as Place });
+  }, []);
+
   const selectedCountryTrips = selection?.kind === 'country' ? (visits.get(selection.code) ?? []) : [];
+  const maxVisits = Math.max(0, ...[...visits.values()].map((v) => v.length));
 
   return (
-    <div className="globe-wrap" ref={containerRef}>
+    <div className="globe-wrap" ref={containerRef} onPointerMove={onPointerMove} onPointerLeave={() => setTip(null)}>
       {size.width > 0 && (
         <Globe
           ref={globeRef}
           width={size.width}
           height={size.height}
+          rendererConfig={rendererConfig}
           backgroundColor="rgba(0,0,0,0)"
           globeMaterial={material}
           showAtmosphere
           atmosphereColor={colors.atmosphere}
-          atmosphereAltitude={0.18}
-          polygonsData={countries}
-          polygonCapColor={(f) => {
-            const feat = f as CountryFeature;
-            return feat === hoverCountry ? (dark ? '#f8fafc' : '#334155') : visitColor(feat.properties.code);
-          }}
-          polygonSideColor={() => 'rgba(0,0,0,0.15)'}
-          polygonStrokeColor={() => colors.border}
-          polygonAltitude={(f) => ((f as CountryFeature).properties.code && visits.has((f as CountryFeature).properties.code!) ? 0.012 : 0.005)}
-          polygonsTransitionDuration={300}
-          polygonLabel={(f) => {
-            const code = (f as CountryFeature).properties.code;
-            const name = code ? countryName(code) : (f as CountryFeature).properties.name;
-            const n = code ? (visits.get(code)?.length ?? 0) : 0;
-            return `<div class="globe-tip">${code ? flag(code) : ''} <b>${esc(name)}</b><br/>${n ? `${n} Reise${n > 1 ? 'n' : ''}` : 'noch nicht besucht'}</div>`;
-          }}
-          onPolygonHover={(f) => setHoverCountry(f as CountryFeature | null)}
-          onPolygonClick={(f) => {
-            const code = (f as CountryFeature).properties.code;
-            if (code) setSelection({ kind: 'country', code });
-          }}
+          atmosphereAltitude={0.16}
+          onGlobeClick={onGlobeClick}
           pointsData={places}
           pointLat="lat"
           pointLng="lng"
-          pointAltitude={(p) => ((p as Place).isHome ? 0.04 : 0.025)}
-          pointRadius={(p) => ((p as Place).isHome ? 0.5 : 0.28 + Math.min(0.3, (p as Place).trips.length * 0.06))}
-          pointColor={(p) => {
-            const place = p as Place;
-            if (place.isHome) return '#22c55e';
-            if (focusTripId && !place.trips.some(highlightTrip)) return colors.placeDim;
-            return colors.place;
-          }}
-          pointLabel={(p) => {
-            const place = p as Place;
-            if (place.isHome) return `<div class="globe-tip">🏠 <b>${esc(place.name)}</b><br/>Zuhause</div>`;
-            return `<div class="globe-tip">${flag(place.countryCode)} <b>${esc(place.name)}</b><br/>${place.trips.map((t) => esc(t.title)).join('<br/>')}</div>`;
-          }}
-          onPointClick={(p) => !(p as Place).isHome && setSelection({ kind: 'place', place: p as Place })}
-          arcsData={legs}
-          arcStartLat={(l) => (l as Leg).from.lat}
-          arcStartLng={(l) => (l as Leg).from.lng}
-          arcEndLat={(l) => (l as Leg).to.lat}
-          arcEndLng={(l) => (l as Leg).to.lng}
-          arcColor={(l: object) => legColor(l as Leg)}
-          arcAltitude={(l) => ((l as Leg).transport === 'flight' ? null : 0.004 + Math.min(0.03, (l as Leg).km / 60000))}
-          arcAltitudeAutoScale={0.35}
-          arcStroke={(l) => (focusTripId === (l as Leg).tripId ? 0.9 : 0.45)}
-          arcDashLength={(l) => ((l as Leg).transport === 'flight' ? 0.4 : 1)}
-          arcDashGap={(l) => ((l as Leg).transport === 'flight' ? 0.15 : 0)}
-          arcDashAnimateTime={(l) => ((l as Leg).transport === 'flight' ? 4000 : 0)}
-          arcLabel={(l) => {
-            const leg = l as Leg;
-            return `<div class="globe-tip">${TRANSPORTS[leg.transport].icon} ${esc(leg.from.name)} → ${esc(leg.to.name)}<br/>${Math.round(leg.km).toLocaleString('de-DE')} km</div>`;
-          }}
+          pointAltitude={0.012}
+          pointRadius={pointRadius}
+          pointResolution={8}
+          pointColor={pointColor}
+          pointsTransitionDuration={0}
+          pointLabel={pointLabel}
+          onPointHover={onPointHover}
+          onPointClick={onPointClick}
         />
       )}
 
+      {tip && (
+        <div className="globe-tip globe-tip-float" style={{ left: tip.x + 14, top: tip.y + 14 }} dangerouslySetInnerHTML={{ __html: tip.html }} />
+      )}
+
       <div className="globe-views" role="group" aria-label="Ansicht">
-        <button
-          className="btn btn-small"
-          onClick={() => {
-            const g = globeRef.current;
-            if (!g) return;
-            g.pointOfView(FOCUS_REGION.view, 1200);
-          }}
-        >
+        <button className="btn btn-small" onClick={() => globeRef.current?.pointOfView(FOCUS_REGION.view, 1200)}>
           {FOCUS_REGION.name}
         </button>
-        <button
-          className="btn btn-small"
-          onClick={() => {
-            const g = globeRef.current;
-            if (!g) return;
-            g.pointOfView({ ...FOCUS_REGION.view, altitude: 2.6 }, 1200);
-          }}
-        >
+        <button className="btn btn-small" onClick={() => globeRef.current?.pointOfView({ ...FOCUS_REGION.view, altitude: 2.6 }, 1200)}>
           Welt
         </button>
       </div>
 
-      {legend.size > 0 && (
+      {trips.length > 0 && (
         <div className="globe-legend" aria-label="Legende">
-          {[...legend.entries()].map(([color, labels]) => (
-            <span key={color}>
-              <i style={{ background: color }} />
-              {labels.join(' / ')}
-            </span>
-          ))}
+          <span>
+            <i className="dot" style={{ background: colors.place }} />
+            Orte
+          </span>
           {home && (
             <span>
-              <i style={{ background: '#22c55e' }} />
+              <i className="dot" style={{ background: HOME_COLOR }} />
               Zuhause
             </span>
           )}
+          <span>
+            Länder:
+            {colors.visited.slice(0, Math.max(1, Math.min(maxVisits, colors.visited.length))).map((c, i, arr) => (
+              <span key={c} className="legend-step">
+                <i className="swatch" style={{ background: c }} />
+                {i === arr.length - 1 && i === colors.visited.length - 1 ? `${i + 1}+` : i + 1}×
+              </span>
+            ))}
+          </span>
         </div>
       )}
 
